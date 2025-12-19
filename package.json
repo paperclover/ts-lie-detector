@@ -5,6 +5,7 @@
     "vitest": "^4.0.16"
   },
   "devDependencies": {
-    "@types/node": "^25.0.2"
+    "@types/node": "^25.0.2",
+    "@vitest/ui": "^4.0.16"
   }
 }

@@ -3,7 +3,9 @@ import { transformString } from "../src/transform";
 
 function shouldTransform(label: string, source: string, result: string) {
   test(label, () => {
-    expect(transformString(source).trim()).toBe(result.trim());
+    expect(transformString(source).trim().replace(/\s+/g, " ")).toBe(
+      result.trim(),
+    );
   });
 }
 
@@ -37,5 +39,31 @@ describe("transform tests", () => {
     "number literal",
     `unknown as 2312`,
     "t_assert(unknown, t_literal(2312));",
+  );
+  shouldTransform(
+    "object type",
+    `unknown as { x: number, y: string }`,
+    "t_assert(unknown, t_object({ x: t_number, y: t_string }, []));",
+  );
+  shouldTransform(
+    "object type with optional",
+    `unknown as { x: number, y?: string }`,
+    't_assert(unknown, t_object({ x: t_number, y: t_string }, ["y"]));',
+  );
+  shouldTransform(
+    "interface",
+    `
+      interface Type { x: number, y: string }
+      unknown as Type
+    `,
+    "t_assert(unknown, t_object({ x: t_number, y: t_string }, []));",
+  );
+  shouldTransform(
+    "type definition",
+    `
+      type Type = { x: number, y: string }
+      unknown as Type
+    `,
+    "t_assert(unknown, t_object({ x: t_number, y: t_string }, []));",
   );
 });

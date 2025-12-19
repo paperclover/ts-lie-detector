@@ -45,6 +45,26 @@ export const t_or = <T>(...types: Type<T>[]): Type<T> => (value: unknown) => {
   return fail;
 };
 
+export const t_object = <T extends object>(
+  shape: Record<string, Type<unknown>>,
+  optionalKeys: string[] = [],
+): Type<T> => {
+  const optional = new Set(optionalKeys);
+  return (value: unknown) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return fail;
+    }
+    for (const [key, check] of Object.entries(shape)) {
+      const hasKey = Object.prototype.hasOwnProperty.call(value, key);
+      if (!hasKey && !optional.has(key)) return fail;
+      if (hasKey && check((value as Record<string, unknown>)[key]) === fail) {
+        return fail;
+      }
+    }
+    return value as T;
+  };
+};
+
 export const t_ignore = (value: unknown) => {
   return value;
 };

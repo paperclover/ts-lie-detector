@@ -74,6 +74,35 @@ class Transformer {
       return this.libSymbol("t_undefined");
     }
 
+    // Object types
+    if (type.flags & ts.TypeFlags.Object) {
+      const properties = checker.getPropertiesOfType(type);
+      if (properties.length > 0) {
+        const shapeProps = properties.map((prop) => {
+          const declaration = prop.valueDeclaration ??
+            prop.declarations?.[0] ??
+            type.symbol?.valueDeclaration ??
+            type.symbol?.declarations?.[0];
+          assert(declaration);
+          const propType = checker.getTypeOfSymbolAtLocation(
+            prop,
+            declaration,
+          );
+          return f.createPropertyAssignment(
+            prop.getName(),
+            this.getCheckFn(propType),
+          );
+        });
+        const optionalKeys = properties
+          .filter((prop) => (prop.getFlags() & ts.SymbolFlags.Optional) !== 0)
+          .map((prop) => f.createStringLiteral(prop.getName()));
+        return f.createCallExpression(this.libSymbol("t_object"), [], [
+          f.createObjectLiteralExpression(shapeProps, true),
+          f.createArrayLiteralExpression(optionalKeys, false),
+        ]);
+      }
+    }
+
     // Union types
     if (type.isUnion()) {
       let types = type.types;
