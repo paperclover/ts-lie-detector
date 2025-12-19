@@ -41,6 +41,11 @@ class Transformer {
   getCheckFn(type: ts.Type): ts.Expression {
     const { f, checker } = this;
 
+    // Unknown / any: used only inside composite types; top-level handled in visit
+    if (type.flags & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) {
+      return this.libSymbol("t_ignore");
+    }
+
     // Literal Values
     if (type.isLiteral()) {
       return f.createCallExpression(this.libSymbol("t_literal"), [], [
@@ -72,6 +77,56 @@ class Transformer {
     }
     if (type.flags & ts.TypeFlags.Undefined) {
       return this.libSymbol("t_undefined");
+    }
+
+    // Array types
+    if (checker.isArrayType(type)) {
+      const elementType = checker.getElementTypeOfArrayType(type);
+      const elementCheck = elementType
+        ? this.getCheckFn(elementType)
+        : this.libSymbol("t_ignore");
+      return f.createCallExpression(this.libSymbol("t_array"), [], [
+        elementCheck,
+      ]);
+    }
+
+    // Tuple types
+    if (checker.isTupleType(type)) {
+      const tupleRef = type as ts.TupleTypeReference;
+      const tupleTarget = tupleRef.target ?? (type as ts.TupleType);
+      const typeArgs = checker.getTypeArguments(
+        tupleRef as unknown as ts.TypeReference,
+      );
+      const checks = typeArgs.map((t) => this.getCheckFn(t));
+      const flags = tupleTarget.elementFlags ?? [];
+      const restIndices = flags.reduce<number[]>((acc, flag, idx) => {
+        if ((flag & ts.ElementFlags.Rest) !== 0) acc.push(idx);
+        return acc;
+      }, []);
+      if (restIndices.length > 1) {
+        throw new Error(
+          `Unsupported tuple form (multiple spreads): ${
+            checker.typeToString(type)
+          }`,
+        );
+      }
+      const restIndex = restIndices[0] ?? -1;
+
+      // No spread: fixed-length tuple
+      if (restIndex === -1) {
+        return f.createCallExpression(this.libSymbol("t_tuple"), [], [
+          f.createArrayLiteralExpression(checks, true),
+        ]);
+      }
+
+      const before = checks.slice(0, restIndex);
+      const rest = checks[restIndex];
+      const after = checks.slice(restIndex + 1);
+      return f.createCallExpression(this.libSymbol("t_tuple_spread"), [], [
+        f.createArrayLiteralExpression(before, true),
+        rest,
+        f.createArrayLiteralExpression(after, true),
+      ]);
     }
 
     // Object types
@@ -128,6 +183,10 @@ class Transformer {
     const { checker, f } = this;
     if (ts.isAsExpression(node)) {
       const type = checker.getTypeFromTypeNode(node.type);
+      // Top-level unknown / any: no assertion
+      if (type.flags & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) {
+        return node.expression;
+      }
       return f.createCallExpression(
         this.libSymbol("t_assert"),
         [],

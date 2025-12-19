@@ -66,4 +66,39 @@ describe("transform tests", () => {
     `,
     "t_assert(unknown, t_object({ x: t_number, y: t_string }, []));",
   );
+  shouldTransform(
+    "unknown and any emits no assertion",
+    `[global as unknown, global as any];`,
+    "[global, global];",
+  );
+  shouldTransform(
+    "array type",
+    `unknown as unknown[];`,
+    "t_assert(unknown, t_array(t_ignore));",
+  );
+  shouldTransform(
+    "array of item type",
+    `unknown as string[];`,
+    "t_assert(unknown, t_array(t_string));",
+  );
+  shouldTransform(
+    "tuple",
+    `unknown as [string, number, boolean];`,
+    "t_assert(unknown, t_tuple([ t_string, t_number, t_boolean ]));",
+  );
+  shouldTransform(
+    "tuple with spread at start",
+    `unknown as [...number[], string];`,
+    "t_assert(unknown, t_tuple_spread([], t_number, [ t_string ]));",
+  );
+  shouldTransform(
+    "tuple with spread at end",
+    `unknown as [string, ...number[]];`,
+    "t_assert(unknown, t_tuple_spread([ t_string ], t_number, []));",
+  );
+  shouldTransform(
+    "tuple with spread in middle",
+    `unknown as [string, ...number[], boolean];`,
+    "t_assert(unknown, t_tuple_spread([ t_string ], t_number, [ t_boolean ]));",
+  );
 });
