@@ -238,4 +238,77 @@ describe("transform tests", () => {
       t_assert_truthy(condition);
     }`,
   );
+  shouldTransform(
+    "symbols",
+    `
+      const y = Symbol("Y");
+      type Y = typeof y;
+      global as Y;
+      global as symbol;
+    `,
+    `
+      const y = Symbol("Y");
+      t_assert(global, t_symbol(y));
+      t_assert(global, t_symbol(null));
+    `,
+  );
+  shouldTransform(
+    "symbols from import",
+    `
+      import { y, x } from "opaque";
+      console.log(y, x);
+      global as typeof y;
+      global as typeof x;
+    `,
+    `
+      import { y, x } from "opaque";
+      console.log(y, x);
+      t_assert(global, t_symbol(y));
+      t_assert(global, t_symbol(null));
+    `,
+    {
+      files: {
+        "ambient.d.ts": `
+          declare module "opaque" {
+            export const y: unique symbol;
+            export const x: symbol;
+            export type Z = typeof import("opaque/second")["z"];
+          }
+          declare module "opaque/second" {
+            export const z: unique symbol;
+          }
+        `,
+      },
+    },
+  );
+  shouldTransform(
+    "symbols from type import",
+    `
+      import type { x, y, Z } from "opaque";
+      global as typeof x;
+      global as typeof y;
+      global as Z;
+    `,
+    `
+      import * as second_1 from "opaque/second";
+      import * as opaque_1 from "opaque";
+      t_assert(global, t_symbol(null));
+      t_assert(global, t_symbol(opaque_1.y));
+      t_assert(global, t_symbol(second_1.z));
+    `,
+    {
+      files: {
+        "ambient.d.ts": `
+          declare module "opaque" {
+            export const y: unique symbol;
+            export const x: symbol;
+            export type Z = typeof import("opaque/second")["z"];
+          }
+          declare module "opaque/second" {
+            export const z: unique symbol;
+          }
+        `,
+      },
+    },
+  );
 });

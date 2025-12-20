@@ -31,15 +31,39 @@ export const tsCompilerOptions: ts.CompilerOptions = {
   allowUnreachableCode: false,
 };
 
+interface ImportRequest {
+  default: ts.Identifier | null;
+  named: Record<string, ts.Identifier>;
+  types: ts.ImportSpecifier[];
+  star: ts.Identifier | null;
+}
+
+/** TSLD performs all work in one pass over a type-checked AST. */
 class Transformer {
   f: ts.NodeFactory;
   ctx: ts.TransformationContext;
   checker: ts.TypeChecker;
-  libSymbols = new Map<string, ts.ImportSpecifier>();
+  file: ts.SourceFile;
+  /** Maps library symbols to lazily generated symbols. */
+  libSymbols = new Map<
+    keyof typeof import("@clo/ts-lie-detector/runtime.ts"),
+    ts.ImportSpecifier
+  >();
+  /**
+   * For runtime imports that TSLD wants to add, these are stored here. At the
+   * end of the visit, these are converted into import statements.
+   * Keys are module specifiers.
+   */
+  imports = new Map<string, ImportRequest>();
 
-  constructor(ctx: ts.TransformationContext, checker: ts.TypeChecker) {
+  constructor(
+    ctx: ts.TransformationContext,
+    checker: ts.TypeChecker,
+    file: ts.SourceFile,
+  ) {
     this.ctx = ctx;
     this.checker = checker;
+    this.file = file;
     this.f = this.ctx.factory;
   }
 
@@ -59,6 +83,69 @@ class Transformer {
       this.libSymbols.set(name, existing);
     }
     return existing.name;
+  }
+
+  getDeclaredModuleName(node: ts.Node): string {
+    while (node) {
+      if (ts.isSourceFile(node)) return node.fileName;
+      if (ts.isModuleDeclaration(node)) return node.name.text;
+      node = node.parent;
+    }
+    throw new Error("AST node not inside of a module");
+  }
+
+  importUniqueSymbolByType(type: ts.Type): ts.Expression | null {
+    const symbol = type.getSymbol();
+    assert(symbol);
+
+    const importableCandidates: { file: string; decl: ts.Declaration }[] = [];
+
+    // first, attempt to find a symbol within the file
+    for (const decl of symbol.declarations ?? []) {
+      const file = this.getDeclaredModuleName(decl);
+      if (file === this.file.fileName) {
+        // TODO: it is possible to locate a unique symbol in
+        // something other than a variable declaration, but it's
+        // extremely stupid and no one really does this in the wild.
+        assert(ts.isVariableDeclaration(decl));
+        assert(ts.isIdentifier(decl.name));
+        return decl.name;
+      }
+      importableCandidates.push({ file, decl });
+    }
+
+    for (const { file, decl } of importableCandidates) {
+      // TODO: it is possible to locate a unique symbol in
+      // something other than a variable declaration, but it's
+      // extremely stupid and no one really does this in the wild.
+      assert(ts.isVariableDeclaration(decl));
+      assert(ts.isIdentifier(decl.name));
+      const list = decl.parent;
+      assert(ts.isVariableDeclarationList(list));
+      const stmt = list.parent;
+      assert(ts.isVariableStatement(stmt));
+      // TODO: it's very possible to locate a non-exported unique symbol,
+      // or exporting the symbol in many other ways.
+      assert(
+        stmt.modifiers!.some(mod => mod.kind === ts.SyntaxKind.ExportKeyword),
+      );
+      return this.importValue(file, decl.name.text);
+    }
+
+    throw new Error("Symbol is unimportable/");
+  }
+
+  importValue(fileName: string, name: string) {
+    const { f } = this;
+    let req = this.getOrPutImport(fileName);
+    if (req.named[name]) return req.named[name];
+    req.star ??= f.createUniqueName(
+      path.basename(fileName, path.extname(fileName)),
+    );
+    const nameNode = this.identifierOrString(name);
+    return ts.isIdentifier(nameNode)
+      ? f.createPropertyAccessExpression(req.star, nameNode)
+      : f.createElementAccessExpression(req.star, nameNode);
   }
 
   getCheckFn(type: ts.Type): ts.Expression {
@@ -100,6 +187,17 @@ class Transformer {
     }
     if (type.flags & ts.TypeFlags.Undefined) {
       return this.libSymbol("t_undefined");
+    }
+    if (type.flags & ts.TypeFlags.UniqueESSymbol) {
+      const symbolValue = this.importUniqueSymbolByType(type);
+      return f.createCallExpression(this.libSymbol("t_symbol"), [], [
+        symbolValue ?? f.createNull(),
+      ]);
+    }
+    if (type.flags & ts.TypeFlags.ESSymbol) {
+      return f.createCallExpression(this.libSymbol("t_symbol"), [], [
+        f.createNull(),
+      ]);
     }
 
     // Array types
@@ -205,6 +303,7 @@ class Transformer {
     childVisit?: (node: ts.Node) => ts.Node | ts.Node[] | undefined,
   ): ts.Node | ts.Node[] | undefined => {
     const { checker, f } = this;
+
     if (ts.isAsExpression(node)) {
       const type = checker.getTypeFromTypeNode(node.type);
       if (type.flags & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) {
@@ -472,6 +571,27 @@ class Transformer {
       `Unimplemented in updateBlockContents: ${ts.SyntaxKind[node.kind]}`,
     );
   }
+
+  identifierOrString(name: string) {
+    if (!/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(name)) {
+      return this.f.createStringLiteral(name);
+    }
+    const id = this.f.createIdentifier(name);
+    if (ts.identifierToKeywordKind(id)) return this.f.createStringLiteral(name);
+    return id;
+  }
+
+  getOrPutImport(fileName: string) {
+    const { imports } = this;
+    let req = imports.get(fileName);
+    if (!req) {
+      imports.set(
+        fileName,
+        req = { default: null, named: {}, types: [], star: null },
+      );
+    }
+    return req;
+  }
 }
 
 export function createTransformer(
@@ -480,11 +600,92 @@ export function createTransformer(
 ) {
   const libPath = options.runtimePath ?? defaultOptions.runtimePath;
   return (ctx: ts.TransformationContext) => (rootNode: ts.SourceFile) => {
-    const instance = new Transformer(ctx, checker);
-    const { f } = instance;
-    const visited = ts.visitNode(rootNode, instance.visit) as ts.SourceFile;
+    const instance = new Transformer(ctx, checker, rootNode);
+    const { f, imports } = instance;
+
+    // pass 1: split imports and non-imports with a shallow visit
+    let rootStatements: ts.Statement[] = [];
+    for (const stmt of rootNode.statements) {
+      if (!ts.isImportDeclaration(stmt)) {
+        rootStatements.push(stmt);
+        continue;
+      }
+      const { importClause } = stmt;
+      if (
+        !importClause
+        || importClause.phaseModifier === ts.SyntaxKind.TypeKeyword
+      ) {
+        // bare import or type-only import
+        rootStatements.push(stmt);
+        continue;
+      }
+      assert(ts.isStringLiteral(stmt.moduleSpecifier));
+      const req = instance.getOrPutImport(stmt.moduleSpecifier.text);
+      if (importClause.name) req.default = importClause.name;
+      if (importClause.namedBindings) {
+        if (ts.isNamespaceImport(importClause.namedBindings)) {
+          req.star = importClause.namedBindings.name;
+        } else if (ts.isNamedImports(importClause.namedBindings)) {
+          const { type = [], runtime = [] } = Object.groupBy(
+            importClause.namedBindings.elements,
+            (node) => node.isTypeOnly ? "type" : "runtime",
+          );
+          req.named = Object.fromEntries(
+            runtime.map(node =>
+              [
+                node.propertyName ? node.propertyName.text : node.name.text,
+                node.name,
+              ] as const
+            ),
+          );
+          req.types = type;
+        }
+      }
+    }
+
+    // pass 2. visit recursively the entire ast
+    rootStatements = rootStatements.map(node =>
+      ts.visitNode(node, instance.visit) as ts.Statement
+    );
+
+    for (const [path, decl] of imports) {
+      const names = Object.entries(decl.named);
+      const bindings = [
+        decl.star && f.createNamespaceImport(decl.star),
+        (names.length > 0 || decl.types.length > 0)
+        && f.createNamedImports([
+          ...names.map(([ext, local]) =>
+            f.createImportSpecifier(
+              false,
+              ext === local.text ? undefined : instance.identifierOrString(ext),
+              local,
+            )
+          ),
+          ...decl.types,
+        ]),
+      ].filter(Boolean) as ts.NamedImportBindings[];
+      rootStatements.unshift(f.createImportDeclaration(
+        undefined,
+        f.createImportClause(
+          undefined,
+          decl.default ?? undefined,
+          bindings[0],
+        ),
+        f.createStringLiteral(path),
+      ));
+      if (bindings[1]) {
+        rootStatements.unshift(f.createImportDeclaration(
+          undefined,
+          f.createImportClause(undefined, undefined, bindings[1]),
+          f.createStringLiteral(path),
+        ));
+      }
+    }
+
+    // For transform tests, they set the library path to `""` as a special
+    // indicator to disable the import to reduce noise in fixtures.
     if (libPath !== "") {
-      const importDecl = f.createImportDeclaration(
+      rootStatements.unshift(f.createImportDeclaration(
         undefined,
         f.createImportClause(
           undefined,
@@ -492,16 +693,13 @@ export function createTransformer(
           f.createNamedImports([...instance.libSymbols.values()]),
         ),
         f.createStringLiteral(libPath),
-      );
-      return f.updateSourceFile(visited, [
-        importDecl,
-        ...visited.statements,
-      ]);
-    } else {
-      return f.updateSourceFile(visited, [...visited.statements]);
+      ));
     }
+
+    return f.updateSourceFile(rootNode, rootStatements);
   };
 }
 
 import assert from "assert";
+import path from "path";
 import * as ts from "typescript";

@@ -128,3 +128,13 @@ export const t_ignore = (value: unknown) => {
 export function t_assert_truthy(value: unknown): asserts value {
   if (!value) throw new Error("Runtime type failure");
 }
+
+export const t_symbol = <T extends symbol>(
+  expected: T | null,
+): Type<T> =>
+(value: unknown) => {
+  if (typeof value !== "symbol") return fail;
+  if (expected === null) return value as T;
+  if (value === expected) return value as T;
+  return fail;
+};
