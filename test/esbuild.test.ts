@@ -12,7 +12,7 @@ it("works", async () => {
     format: "esm",
   });
 
-  expect(result.outputFiles[0].text).toMatchInlineSnapshot(`
+  expect(result.outputFiles[0]!.text).toMatchInlineSnapshot(`
     "// src/runtime.ts
     var fail = /* @__PURE__ */ Symbol();
     function t_assert(value, check) {

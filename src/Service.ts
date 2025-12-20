@@ -75,8 +75,8 @@ export class Service {
         tsCompilerOptions,
         overriddenSystem,
         undefined,
-        (diagnostic) => {},
-        (diagnostic, newLine, options, errorCount) => {},
+        (diagnostic) => this.reportDiagnostic(diagnostic),
+        () => {}, // do not emit watch logs
         {}, // watch options
         [],
       );
@@ -88,8 +88,8 @@ export class Service {
         tsCompilerOptions,
         overriddenSystem,
         undefined,
-        (diagnostic) => {},
-        (diagnostic, newLine, options, errorCount) => {},
+        (diagnostic) => this.reportDiagnostic(diagnostic),
+        () => {}, // do not emit watch logs
         [], // references
         {}, // watch options
       );
@@ -98,9 +98,25 @@ export class Service {
     }
   }
 
-  transform(file: string) {
+  reportDiagnostic(diagnostic: ts.Diagnostic) {
+    // Skip "import path can only end with a '.ts' extension" because the only
+    // resolution is to disable `noEmit`, but that stops the plugin from being
+    // able to emit JavaScript.
+    if (diagnostic.code === 5097) return;
+
+    console.error(
+      typeof diagnostic.messageText === "string"
+        ? diagnostic.messageText
+        : diagnostic.messageText.messageText,
+    );
+  }
+
+  transform(file: string, opts?: { additionalFiles?: string[] }) {
     if ("updateRootFileNames" in this.incremental) {
-      this.incremental.updateRootFileNames([file]);
+      this.incremental.updateRootFileNames([
+        file,
+        ...opts?.additionalFiles ?? [],
+      ]);
     }
     const builder = this.incremental.getProgram();
 
@@ -137,19 +153,22 @@ export class Service {
     };
   }
 
-  markChanged(filename: string) {
-    this.events.emit("watch", filename);
+  transformVirtual(
+    filename: string,
+    source: string,
+    opts?: { additionalFiles?: string[] },
+  ) {
+    this.writeVirtual(filename, source);
+    return this.transform(virtualPrefix + filename, {
+      additionalFiles: opts?.additionalFiles?.map((x) => virtualPrefix + x)
+        ?? [],
+    });
   }
 
-  transformVirtual(filename: string, source: string) {
+  writeVirtual(filename: string, source: string) {
     const had = this.virtualFiles.has(filename);
     this.virtualFiles.set(filename, source);
-    if (had) this.markChanged(virtualPrefix + filename);
-    try {
-      return this.transform(virtualPrefix + filename);
-    } finally {
-      this.virtualFiles.set(filename, undefined);
-    }
+    if (had) this.events.emit("watch", virtualPrefix + filename);
   }
 
   close() {

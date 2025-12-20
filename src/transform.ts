@@ -17,11 +17,18 @@ export const defaultOptions: LieDetectorOptions = {
 export const tsCompilerOptions: ts.CompilerOptions = {
   target: ts.ScriptTarget.ESNext,
   module: ts.ModuleKind.ESNext,
+  moduleResolution: ts.ModuleResolutionKind.Bundler,
+  skipLibCheck: true,
+  // verbatimModuleSyntax: true,
+  resolveJsonModule: true,
+
+  // strictness
   strict: true,
+  noUnusedLocals: true,
+  noUnusedParameters: true,
+  noFallthroughCasesInSwitch: true,
   noUncheckedIndexedAccess: true,
   allowUnreachableCode: false,
-  skipLibCheck: true,
-  verbatimModuleSyntax: true,
 };
 
 class Transformer {
@@ -131,7 +138,7 @@ class Transformer {
       }
 
       const before = checks.slice(0, restIndex);
-      const rest = checks[restIndex];
+      const rest = checks[restIndex]!;
       const after = checks.slice(restIndex + 1);
       return f.createCallExpression(this.libSymbol("t_tuple_spread"), [], [
         f.createArrayLiteralExpression(before, true),
@@ -188,13 +195,15 @@ class Transformer {
     }
 
     /* v8 ignore next -- @preserve */
-    throw new Error(`Type checker for: ${checker.typeToString(type)}`);
+    throw new Error(
+      `Unimplemented type assertion for: ${checker.typeToString(type)}`,
+    );
   }
 
   visit = (
     node: ts.Node,
-    childVisit?: (node: ts.Node) => ts.Node | ts.Node[] | void,
-  ) => {
+    childVisit?: (node: ts.Node) => ts.Node | ts.Node[] | undefined,
+  ): ts.Node | ts.Node[] | undefined => {
     const { checker, f } = this;
     if (ts.isAsExpression(node)) {
       const type = checker.getTypeFromTypeNode(node.type);
@@ -222,7 +231,7 @@ class Transformer {
     return ts.visitEachChild(node, childVisit ?? this.visit, this.ctx);
   };
 
-  visitFunction(node: NormalFunction) {
+  visitFunction(node: NormalFunction): ts.Node {
     if (node.type && ts.isTypePredicateNode(node.type) && node.body) {
       if (node.type.assertsModifier) {
         return this.transformAssertPredicateFn(
@@ -289,7 +298,8 @@ class Transformer {
       return this.visit(node, visit);
     };
 
-    const stmts = this.functionBodyToStmts(node.body).flatMap(visit);
+    const stmts = this.functionBodyToStmts(node.body)
+      .flatMap(visit) as ts.Statement[];
     if (!stmts.some((x) => ts.isReturnStatement(x))) {
       stmts.push(assertion);
     }
@@ -375,7 +385,8 @@ class Transformer {
       return this.visit(node, visit);
     };
 
-    const stmts = this.functionBodyToStmts(node.body).flatMap(visit);
+    const stmts = this.functionBodyToStmts(node.body)
+      .flatMap(visit) as ts.Statement[];
     return this.updateFunctionBody(node, stmts);
   }
 

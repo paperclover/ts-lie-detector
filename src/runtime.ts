@@ -60,7 +60,7 @@ export const t_tuple = <T extends unknown[]>(
     if (!Array.isArray(value)) return fail;
     if (value.length !== items.length) return fail;
     for (let i = 0; i < items.length; i++) {
-      if (items[i](value[i]) === fail) return fail;
+      if (items[i]!(value[i]) === fail) return fail;
     }
     return value as T;
   };
@@ -78,7 +78,7 @@ export const t_tuple_spread = <T extends unknown[]>(
     if (value.length < beforeLen + afterLen) return fail;
 
     for (let i = 0; i < beforeLen; i++) {
-      if (before[i](value[i]) === fail) return fail;
+      if (before[i]!(value[i]) === fail) return fail;
     }
 
     const restEnd = value.length - afterLen;
@@ -87,7 +87,7 @@ export const t_tuple_spread = <T extends unknown[]>(
     }
 
     for (let i = 0; i < afterLen; i++) {
-      if (after[i](value[restEnd + i]) === fail) return fail;
+      if (after[i]!(value[restEnd + i]) === fail) return fail;
     }
 
     return value as T;
