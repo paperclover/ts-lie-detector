@@ -1,9 +1,14 @@
 import { describe, expect, test } from "vitest";
-import { transformString } from "../src/transform";
+import { transformString } from "../src/transform.ts";
 
 function shouldTransform(label: string, source: string, result: string) {
   test(label, () => {
-    expect(transformString(source).trim().replace(/\s+/g, " ")).toBe(
+    expect(
+      transformString(source).replace('"use strict";', "").trim().replace(
+        /\s+/g,
+        " ",
+      ),
+    ).toBe(
       result.trim(),
     );
   });
@@ -48,7 +53,7 @@ describe("transform tests", () => {
   shouldTransform(
     "object type with optional",
     `unknown as { x: number, y?: string }`,
-    't_assert(unknown, t_object({ x: t_number, y: t_string }, ["y"]));',
+    't_assert(unknown, t_object({ x: t_number, y: t_or(t_undefined, t_string) }, ["y"]));',
   );
   shouldTransform(
     "interface",
@@ -100,5 +105,10 @@ describe("transform tests", () => {
     "tuple with spread in middle",
     `unknown as [string, ...number[], boolean];`,
     "t_assert(unknown, t_tuple_spread([ t_string ], t_number, [ t_boolean ]));",
+  );
+  shouldTransform(
+    "null | undefined",
+    `unknown as null | undefined;`,
+    "t_assert(unknown, t_or(t_undefined, t_null));",
   );
 });

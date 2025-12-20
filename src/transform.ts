@@ -7,6 +7,15 @@ export interface LieDetectorOptions {
 export const defaultOptions = {
   runtimePath: "@clo/typescript-lie-detector/runtime",
 };
+export const tsCompilerOptions: ts.CompilerOptions = {
+  target: ts.ScriptTarget.ESNext,
+  module: ts.ModuleKind.ESNext,
+  strict: true,
+  noUncheckedIndexedAccess: true,
+  allowUnreachableCode: false,
+  skipLibCheck: true,
+  verbatimModuleSyntax: true,
+};
 
 class Transformer {
   f: ts.NodeFactory;
@@ -235,11 +244,7 @@ export function createTransformer(
 
 export function transformString(source: string) {
   const virtualFileName = "virtual-input.ts";
-  const host = ts.createCompilerHost({
-    target: ts.ScriptTarget.ES2015,
-    module: ts.ModuleKind.CommonJS,
-    strict: true,
-  });
+  const host = ts.createCompilerHost(tsCompilerOptions);
   const originalGetSourceFile = host.getSourceFile;
   host.getSourceFile = (name, languageVersion) => {
     if (name === virtualFileName) {
@@ -253,7 +258,7 @@ export function transformString(source: string) {
     return originalGetSourceFile.call(host, name, languageVersion);
   };
 
-  const program = ts.createProgram([virtualFileName], {}, host);
+  const program = ts.createProgram([virtualFileName], tsCompilerOptions, host);
   const sourceFile = program.getSourceFile(virtualFileName);
   assert(sourceFile);
 
