@@ -1,12 +1,11 @@
-import assert from "assert";
-import * as ts from "typescript";
-
 export interface LieDetectorOptions {
   runtimePath: string;
 }
-export const defaultOptions = {
+
+export const defaultOptions: LieDetectorOptions = {
   runtimePath: "@clo/typescript-lie-detector/runtime",
 };
+
 export const tsCompilerOptions: ts.CompilerOptions = {
   target: ts.ScriptTarget.ESNext,
   module: ts.ModuleKind.ESNext,
@@ -90,6 +89,7 @@ class Transformer {
 
     // Array types
     if (checker.isArrayType(type)) {
+      // @ts-expect-error TODO
       const elementType = checker.getElementTypeOfArrayType(type);
       const elementCheck = elementType
         ? this.getCheckFn(elementType)
@@ -248,39 +248,5 @@ export function createTransformer(
   };
 }
 
-export function transformString(source: string) {
-  const virtualFileName = "virtual-input.ts";
-  const host = ts.createCompilerHost(tsCompilerOptions);
-  const originalGetSourceFile = host.getSourceFile;
-  host.getSourceFile = (name, languageVersion) => {
-    if (name === virtualFileName) {
-      return ts.createSourceFile(
-        virtualFileName,
-        source,
-        ts.ScriptTarget.Latest,
-        true,
-      );
-    }
-    return originalGetSourceFile.call(host, name, languageVersion);
-  };
-
-  const program = ts.createProgram([virtualFileName], tsCompilerOptions, host);
-  const sourceFile = program.getSourceFile(virtualFileName);
-  assert(sourceFile);
-
-  const outputs = new Map<string, string>();
-  program.emit(
-    undefined,
-    function (file, contents) {
-      outputs.set(file, contents);
-    },
-    undefined,
-    false,
-    {
-      before: [
-        createTransformer(program.getTypeChecker(), { runtimePath: "" }),
-      ],
-    },
-  );
-  return outputs.values().next().value;
-}
+import assert from "assert";
+import * as ts from "typescript";

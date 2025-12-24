@@ -1,13 +1,18 @@
 import { describe, expect, test } from "vitest";
-import { transformString } from "../src/transform.ts";
+import { Service } from "../src/Service.ts";
+
+const service = new Service({
+  lieDetectorOptions: { runtimePath: "" }
+});
 
 function shouldTransform(label: string, source: string, result: string) {
   test(label, () => {
     expect(
-      transformString(source).replace('"use strict";', "").trim().replace(
-        /\s+/g,
-        " ",
-      ),
+      service.transformVirtual('virtual.ts', source)
+        .text
+        .replace('"use strict";', "")
+        .trim()
+        .replace( /\s+/g, " "),
     ).toBe(
       result.trim(),
     );
