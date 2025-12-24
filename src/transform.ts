@@ -1,3 +1,11 @@
+type NormalFunction = Extract<
+  ts.SignatureDeclaration,
+  { readonly body?: unknown }
+>;
+type NormalFunctionWithBody = NormalFunction & {
+  body: NonNullable<NormalFunction["body"]>;
+};
+
 export interface LieDetectorOptions {
   runtimePath: string;
 }
@@ -112,13 +120,7 @@ class Transformer {
         if ((flag & ts.ElementFlags.Rest) !== 0) acc.push(idx);
         return acc;
       }, []);
-      if (restIndices.length > 1) {
-        throw new Error(
-          `Unsupported tuple form (multiple spreads): ${
-            checker.typeToString(type)
-          }`,
-        );
-      }
+      assert(restIndices.length <= 1);
       const restIndex = restIndices[0] ?? -1;
 
       // No spread: fixed-length tuple
@@ -185,25 +187,25 @@ class Transformer {
       );
     }
 
+    /* v8 ignore next -- @preserve */
     throw new Error(`Type checker for: ${checker.typeToString(type)}`);
   }
 
-  visit = (node: ts.Node) => {
+  visit = (
+    node: ts.Node,
+    childVisit?: (node: ts.Node) => ts.Node | ts.Node[] | void,
+  ) => {
     const { checker, f } = this;
     if (ts.isAsExpression(node)) {
       const type = checker.getTypeFromTypeNode(node.type);
-      // Top-level unknown / any: no assertion
       if (type.flags & (ts.TypeFlags.Unknown | ts.TypeFlags.Any)) {
+        // TODO: insert "/* as unknown */
         return node.expression;
       }
-      return f.createCallExpression(
-        this.libSymbol("t_assert"),
-        [],
-        [
-          node.expression,
-          this.getCheckFn(type),
-        ],
-      );
+      return f.createCallExpression(this.libSymbol("t_assert"), [], [
+        node.expression,
+        this.getCheckFn(type),
+      ]);
     }
 
     if (ts.isNonNullExpression(node)) {
@@ -212,8 +214,253 @@ class Transformer {
       ]);
     }
 
-    return ts.visitEachChild(node, this.visit, this.ctx);
+    // Handle function implementations with assertion return types
+    if (ts.isFunctionLike(node) && "body" in node) {
+      return this.visitFunction(node);
+    }
+
+    return ts.visitEachChild(node, childVisit ?? this.visit, this.ctx);
   };
+
+  visitFunction(node: NormalFunction) {
+    if (node.type && ts.isTypePredicateNode(node.type) && node.body) {
+      if (node.type.assertsModifier) {
+        return this.transformAssertPredicateFn(
+          node as NormalFunctionWithBody,
+          node.type,
+        );
+      } else {
+        return this.transformTypePredicateFn(
+          node as NormalFunctionWithBody,
+          node.type,
+        );
+      }
+    }
+
+    return ts.visitEachChild(node, this.visit, this.ctx);
+  }
+
+  functionBodyToStmts(node: ts.Expression | ts.Block) {
+    const { f } = this;
+    if (ts.isBlock(node)) return node.statements;
+    return [f.createReturnStatement(node)];
+  }
+
+  transformAssertPredicateFn(
+    node: NormalFunctionWithBody,
+    typeNode: ts.TypePredicateNode,
+  ) {
+    const { f, checker } = this;
+
+    const paramName = ts.isIdentifier(typeNode.parameterName)
+      ? typeNode.parameterName
+      : f.createThis();
+
+    const assertion = typeNode.type
+      // assert that the input is of the right type
+      ? f.createExpressionStatement(
+        f.createCallExpression(
+          this.libSymbol("t_assert"),
+          [],
+          [
+            paramName,
+            this.getCheckFn(
+              checker.getTypeFromTypeNode(typeNode.type),
+            ),
+          ],
+        ),
+      )
+      // assert that the input condition is truthy
+      : f.createExpressionStatement(
+        f.createCallExpression(
+          this.libSymbol("t_assert_truthy"),
+          [],
+          [paramName],
+        ),
+      );
+
+    const visit = (node: ts.Node) => {
+      // when entering nested functions, a new, unrelated scope is created
+      if (ts.isFunctionLike(node)) return this.visit(node);
+      // every `return` is an escape that implies the predicate passes
+      if (ts.isReturnStatement(node)) {
+        return this.insertAfterReturn(node, assertion);
+      }
+      return this.visit(node, visit);
+    };
+
+    const stmts = this.functionBodyToStmts(node.body).flatMap(visit);
+    if (!stmts.some((x) => ts.isReturnStatement(x))) {
+      stmts.push(assertion);
+    }
+
+    return this.updateFunctionBody(node, stmts);
+  }
+
+  insertAfterReturn(ret: ts.ReturnStatement, after: ts.Statement) {
+    const { f } = this;
+
+    if (ret.expression == null) {
+      return [after, ret];
+    }
+
+    const local = f.createUniqueName("l_return");
+    return [
+      f.createVariableStatement(
+        undefined,
+        f.createVariableDeclarationList(
+          [
+            f.createVariableDeclaration(
+              local,
+              undefined,
+              undefined,
+              ret.expression,
+            ),
+          ],
+          ts.NodeFlags.Const,
+        ),
+      ),
+      after,
+      f.createReturnStatement(local),
+    ];
+  }
+
+  transformTypePredicateFn(
+    node: NormalFunctionWithBody,
+    typeNode: ts.TypePredicateNode,
+  ) {
+    const { f, checker } = this;
+
+    const paramName = ts.isIdentifier(typeNode.parameterName)
+      ? typeNode.parameterName
+      : f.createThis();
+
+    assert(typeNode.type);
+    const assertion = f.createExpressionStatement(
+      f.createCallExpression(
+        this.libSymbol("t_assert"),
+        [],
+        [
+          paramName,
+          this.getCheckFn(checker.getTypeFromTypeNode(typeNode.type)),
+        ],
+      ),
+    );
+
+    const visit = (node: ts.Node) => {
+      // when entering nested functions, a new, unrelated scope is created
+      if (ts.isFunctionLike(node)) return this.visit(node);
+      // every `return` is an escape that implies the predicate passes
+      if (ts.isReturnStatement(node) && node.expression) {
+        const local = f.createUniqueName("l_return");
+        return [
+          f.createVariableStatement(
+            undefined,
+            f.createVariableDeclarationList(
+              [
+                f.createVariableDeclaration(
+                  local,
+                  undefined,
+                  undefined,
+                  node.expression,
+                ),
+              ],
+              ts.NodeFlags.Const,
+            ),
+          ),
+          f.createIfStatement(local, assertion),
+          f.createReturnStatement(local),
+        ];
+      }
+      return this.visit(node, visit);
+    };
+
+    const stmts = this.functionBodyToStmts(node.body).flatMap(visit);
+    return this.updateFunctionBody(node, stmts);
+  }
+
+  updateFunctionBody(
+    node: NormalFunctionWithBody,
+    statements: ts.Statement[],
+  ) {
+    const { f } = this;
+    const newBody = f.createBlock(statements);
+    if (ts.isFunctionDeclaration(node)) {
+      return f.updateFunctionDeclaration(
+        node,
+        node.modifiers,
+        node.asteriskToken,
+        node.name,
+        node.typeParameters,
+        node.parameters,
+        node.type,
+        newBody,
+      );
+    } else if (ts.isFunctionExpression(node)) {
+      return f.updateFunctionExpression(
+        node,
+        node.modifiers,
+        node.asteriskToken,
+        node.name,
+        node.typeParameters,
+        node.parameters,
+        node.type,
+        newBody,
+      );
+    } else if (ts.isArrowFunction(node)) {
+      return f.updateArrowFunction(
+        node,
+        node.modifiers,
+        node.typeParameters,
+        node.parameters,
+        node.type,
+        node.equalsGreaterThanToken,
+        newBody,
+      );
+    } else if (ts.isMethodDeclaration(node)) {
+      return f.updateMethodDeclaration(
+        node,
+        node.modifiers,
+        node.asteriskToken,
+        node.name,
+        node.questionToken,
+        node.typeParameters,
+        node.parameters,
+        node.type,
+        newBody,
+      );
+    } else if (ts.isConstructorDeclaration(node)) {
+      return f.updateConstructorDeclaration(
+        node,
+        node.modifiers,
+        node.parameters,
+        newBody,
+      );
+    } else if (ts.isGetAccessorDeclaration(node)) {
+      return f.updateGetAccessorDeclaration(
+        node,
+        node.modifiers,
+        node.name,
+        node.parameters,
+        node.type,
+        newBody,
+      );
+    } else if (ts.isSetAccessorDeclaration(node)) {
+      return f.updateSetAccessorDeclaration(
+        node,
+        node.modifiers,
+        node.name,
+        node.parameters,
+        newBody,
+      );
+    }
+
+    /* v8 ignore next -- @preserve */
+    throw new Error(
+      // @ts-expect-error TODO:
+      `Unimplemented in updateBlockContents: ${ts.SyntaxKind[node.kind]}`,
+    );
+  }
 }
 
 export function createTransformer(
@@ -235,15 +482,12 @@ export function createTransformer(
         ),
         f.createStringLiteral(libPath),
       );
-      return f.updateSourceFile(
-        visited,
-        [importDecl, ...visited.statements],
-      );
+      return f.updateSourceFile(visited, [
+        importDecl,
+        ...visited.statements,
+      ]);
     } else {
-      return f.updateSourceFile(
-        visited,
-        [...visited.statements],
-      );
+      return f.updateSourceFile(visited, [...visited.statements]);
     }
   };
 }

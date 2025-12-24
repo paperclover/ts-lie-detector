@@ -14,7 +14,7 @@ function shouldTransform(label: string, source: string, result: string) {
         .trim()
         .replace(/\s+/g, " "),
     ).toBe(
-      result.trim(),
+      result.trim().replace(/\s+/g, " "),
     );
   });
 }
@@ -120,5 +120,103 @@ describe("transform tests", () => {
     "null | undefined",
     `unknown as null | undefined;`,
     "t_assert(unknown, t_or(t_undefined, t_null));",
+  );
+  shouldTransform(
+    "predicate 'asserts param'",
+    `function assert(condition: boolean): asserts condition {
+      if (!condition) throw new Error();
+    }`,
+    `function assert(condition) {
+      if (!condition) throw new Error();
+      t_assert_truthy(condition);
+    }`,
+  );
+  shouldTransform(
+    "predicate 'asserts param' arrow function",
+    `export const assert = (condition: boolean): asserts condition =>
+      (unknown as any)(condition);
+    `,
+    `export const assert = (condition) => {
+      const l_return_1 = unknown(condition);
+      t_assert_truthy(condition);
+      return l_return_1;
+    };`,
+  );
+  shouldTransform(
+    "predicate 'asserts param' method",
+    `class Test {
+      method(): this is number {
+        return Math.random() > 0.5;
+      }
+    }`,
+    `class Test {
+      method() {
+        const l_return_1 = Math.random() > 0.5;
+        if (l_return_1) t_assert(this, t_number);
+        return l_return_1;
+      }
+    }`,
+  );
+  shouldTransform(
+    "predicate 'param is T'",
+    `function isString(value: unknown): value is string {
+      console.log(1);
+      return typeof value === "string";
+    }`,
+    `function isString(value) {
+      console.log(1);
+      const l_return_1 = typeof value === "string";
+      if (l_return_1) t_assert(value, t_string);
+      return l_return_1;
+    }`,
+  );
+  shouldTransform(
+    "predicate 'asserts param is T'",
+    `function assertString(value: unknown): asserts value is string {
+      if (typeof value === 'number') throw new Error("not a string");
+    }`,
+    `function assertString(value) {
+      if (typeof value === 'number') throw new Error("not a string");
+      t_assert(value, t_string);
+    }`,
+  );
+  shouldTransform(
+    "predicate anonymous function",
+    `export const assertString = function(value: unknown): asserts value is string {
+      if (typeof value === 'number') throw new Error("not a string");
+    }`,
+    `export const assertString = function (value) {
+      if (typeof value === 'number') throw new Error("not a string");
+      t_assert(value, t_string);
+    };`,
+  );
+  shouldTransform(
+    "predicate 'asserts param' multi-branch",
+    `function assert(condition: boolean): asserts condition {
+      if (Math.random() > 0.5) {
+        while(false) return
+        if (!condition) throw new Error();
+        console.log(2);
+        return;
+      }
+      const fn = function () {
+        return true;
+      };
+      console.log(fn());
+    }`,
+    `function assert(condition) {
+      if (Math.random() > 0.5) {
+        while (false) { t_assert_truthy(condition); return; }
+        if (!condition) throw new Error();
+        console.log(2);
+        t_assert_truthy(condition);
+        return;
+      }
+      const fn = function () {
+        return true;
+      };
+      console.log(fn());
+      t_assert_truthy(condition);
+    }`,
   );
 });

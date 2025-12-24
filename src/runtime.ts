@@ -124,3 +124,7 @@ export function t_assert_nonnull<T>(value: T): NonNullable<T> {
 export const t_ignore = (value: unknown) => {
   return value;
 };
+
+export function t_assert_truthy(value: unknown): asserts value {
+  if (!value) throw new Error("Runtime type failure");
+}

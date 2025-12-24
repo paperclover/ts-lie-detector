@@ -57,7 +57,6 @@ export class Service {
         return sys.readFile(path, enc);
       },
       resolvePath: (path) => {
-        console.log({ x: path });
         if (path.startsWith("virtual:")) return path;
         return sys.resolvePath(path);
       },
