@@ -114,6 +114,11 @@ export const t_object = <T extends object>(
   };
 };
 
+export function t_assert_nonnull<T>(value: T): NonNullable<T> {
+  if (value == null) throw new Error("Non-null assertion failed, value is " + value);
+  return value as NonNullable<T>;
+}
+
 export const t_ignore = (value: unknown) => {
   return value;
 };

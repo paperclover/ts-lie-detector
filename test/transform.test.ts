@@ -107,6 +107,11 @@ describe("transform tests", () => {
     "t_assert(unknown, t_tuple_spread([ t_string ], t_number, [ t_boolean ]));",
   );
   shouldTransform(
+    "non-null assertion",
+    `unknown!;`,
+    "t_assert_nonnull(unknown);",
+  );
+  shouldTransform(
     "null | undefined",
     `unknown as null | undefined;`,
     "t_assert(unknown, t_or(t_undefined, t_null));",

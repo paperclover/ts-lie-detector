@@ -206,6 +206,12 @@ class Transformer {
       );
     }
 
+    if (ts.isNonNullExpression(node)) {
+      return f.createCallExpression(this.libSymbol("t_assert_nonnull"), [], [
+        node.expression,
+      ]);
+    }
+
     return ts.visitEachChild(node, this.visit, this.ctx);
   };
 }
