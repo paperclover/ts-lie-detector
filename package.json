@@ -1,7 +1,12 @@
 {
+  "name": "@clo/ts-lie-detector",
   "type": "module",
   "scripts": {
     "test": "vitest run"
+  },
+  "exports": {
+    "./runtime.ts": "./src/runtime.ts",
+    "./esbuild.ts": "./src/esbuild.ts"
   },
   "dependencies": {
     "typescript": "^5.9.3",

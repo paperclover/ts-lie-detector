@@ -3,7 +3,7 @@ export interface LieDetectorOptions {
 }
 
 export const defaultOptions: LieDetectorOptions = {
-  runtimePath: "@clo/typescript-lie-detector/runtime",
+  runtimePath: "@clo/ts-lie-detector/runtime.ts",
 };
 
 export const tsCompilerOptions: ts.CompilerOptions = {
