@@ -1,2 +1,2 @@
-import { someFunction } from "./bundler-b";
-someFunction(global as { process: { version: string } });
+import { someFunction } from "./bundler-b.ts";
+someFunction(window.global as { process: { version: string } });

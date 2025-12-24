@@ -47,7 +47,7 @@ it("works", async () => {
     }
 
     // test/fixtures/bundler-a.ts
-    someFunction(t_assert(global, t_object({
+    someFunction(t_assert(window.global, t_object({
       process: t_object({
         version: t_string
       }, [])

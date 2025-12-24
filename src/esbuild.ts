@@ -15,7 +15,7 @@ export default function esbuildPlugin(
       ));
       const service = new Service({ lieDetectorOptions: options });
       b.onLoad(
-        { filter: /\.ts[x]?$/ },
+        { filter: /\.tsx?$/ },
         // NOTE: Bun doesn't pass `with`, so a default is needed
         async ({ path: file, suffix, with: { type } = {} }) => {
           if (file === runtimePath! || type || suffix) {
