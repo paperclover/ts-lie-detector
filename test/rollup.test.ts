@@ -44,9 +44,11 @@ it("works", async () => {
         };
     };
 
-    function someFunction(param) {
-        console.log(param.process.version);
-    }
+    function someFunction(param) { t_assert(param, t_object({
+        process: t_object({
+            version: t_string
+        }, [])
+    }, [])); console.log(param.process.version); }
 
     someFunction(t_assert(window.global, t_object({
         process: t_object({

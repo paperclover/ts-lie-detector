@@ -323,29 +323,31 @@ class Transformer {
     }
 
     // Handle function implementations with assertion return types
-    if (ts.isFunctionLike(node) && "body" in node) {
-      return this.visitFunction(node);
+    if (ts.isFunctionLike(node) && "body" in node && node.body) {
+      return this.visitFunctionWithBody(node as NormalFunctionWithBody);
     }
 
     return ts.visitEachChild(node, childVisit ?? this.visit, this.ctx);
   };
 
-  visitFunction(node: NormalFunction): ts.Node {
-    if (node.type && ts.isTypePredicateNode(node.type) && node.body) {
+  visitFunctionWithBody(node: NormalFunctionWithBody) {
+    let transformed;
+
+    if (node.type && ts.isTypePredicateNode(node.type)) {
       if (node.type.assertsModifier) {
-        return this.transformAssertPredicateFn(
-          node as NormalFunctionWithBody,
-          node.type,
-        );
+        transformed = this.transformAssertPredicateFn(node);
       } else {
-        return this.transformTypePredicateFn(
-          node as NormalFunctionWithBody,
-          node.type,
-        );
+        transformed = this.transformTypePredicateFn(node);
       }
+    } else {
+      transformed = ts.visitEachChild(
+        node,
+        this.visit,
+        this.ctx,
+      ) as NormalFunctionWithBody;
     }
 
-    return ts.visitEachChild(node, this.visit, this.ctx);
+    return this.annotateFunctionParameters(transformed);
   }
 
   functionBodyToStmts(node: ts.Expression | ts.Block) {
@@ -354,17 +356,16 @@ class Transformer {
     return [f.createReturnStatement(node)];
   }
 
-  transformAssertPredicateFn(
-    node: NormalFunctionWithBody,
-    typeNode: ts.TypePredicateNode,
-  ) {
+  transformAssertPredicateFn(node: NormalFunctionWithBody) {
+    const { type } = node;
+    assert(type && ts.isTypePredicateNode(type));
     const { f, checker } = this;
 
-    const paramName = ts.isIdentifier(typeNode.parameterName)
-      ? typeNode.parameterName
+    const paramName = ts.isIdentifier(type.parameterName)
+      ? type.parameterName
       : f.createThis();
 
-    const assertion = typeNode.type
+    const assertion = type.type
       // assert that the input is of the right type
       ? f.createExpressionStatement(
         f.createCallExpression(
@@ -373,7 +374,7 @@ class Transformer {
           [
             paramName,
             this.getCheckFn(
-              checker.getTypeFromTypeNode(typeNode.type),
+              checker.getTypeFromTypeNode(type.type),
             ),
           ],
         ),
@@ -403,7 +404,7 @@ class Transformer {
       stmts.push(assertion);
     }
 
-    return this.updateFunctionBody(node, stmts);
+    return this.updateFunctionBody(node, stmts) as NormalFunctionWithBody;
   }
 
   insertAfterReturn(ret: ts.ReturnStatement, after: ts.Statement) {
@@ -434,24 +435,23 @@ class Transformer {
     ];
   }
 
-  transformTypePredicateFn(
-    node: NormalFunctionWithBody,
-    typeNode: ts.TypePredicateNode,
-  ) {
+  transformTypePredicateFn(node: NormalFunctionWithBody) {
+    const { type } = node;
+    assert(type && ts.isTypePredicateNode(type));
     const { f, checker } = this;
 
-    const paramName = ts.isIdentifier(typeNode.parameterName)
-      ? typeNode.parameterName
+    const paramName = ts.isIdentifier(type.parameterName)
+      ? type.parameterName
       : f.createThis();
 
-    assert(typeNode.type);
+    assert(type.type);
     const assertion = f.createExpressionStatement(
       f.createCallExpression(
         this.libSymbol("t_assert"),
         [],
         [
           paramName,
-          this.getCheckFn(checker.getTypeFromTypeNode(typeNode.type)),
+          this.getCheckFn(checker.getTypeFromTypeNode(type.type)),
         ],
       ),
     );
@@ -486,7 +486,7 @@ class Transformer {
 
     const stmts = this.functionBodyToStmts(node.body)
       .flatMap(visit) as ts.Statement[];
-    return this.updateFunctionBody(node, stmts);
+    return this.updateFunctionBody(node, stmts) as NormalFunctionWithBody;
   }
 
   updateFunctionBody(
@@ -591,6 +591,38 @@ class Transformer {
       );
     }
     return req;
+  }
+
+  annotateFunctionParameters(node: NormalFunctionWithBody) {
+    const { f } = this;
+    const parameterAssertions: ts.Statement[] = [];
+    for (const param of node.parameters) {
+      if (param.type) {
+        const paramType = this.checker.getTypeAtLocation(param.type);
+
+        assert(ts.isIdentifier(param.name)); // TODO:
+        const paramIdentifier = param.name;
+
+        let checkFn = this.getCheckFn(paramType);
+        if (param.questionToken) {
+          checkFn = f.createCallExpression(this.libSymbol("t_or"), [], [
+            this.libSymbol("t_undefined"),
+            checkFn,
+          ]);
+        }
+        const assertion = f.createExpressionStatement(
+          f.createCallExpression(this.libSymbol("t_assert"), [], [
+            paramIdentifier,
+            checkFn,
+          ]),
+        );
+        parameterAssertions.push(assertion);
+      }
+    }
+
+    const bodyStatements = this.functionBodyToStmts(node.body);
+    const newBodyStatements = [...parameterAssertions, ...bodyStatements];
+    return this.updateFunctionBody(node, newBodyStatements);
   }
 }
 

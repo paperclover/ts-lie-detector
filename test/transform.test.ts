@@ -146,6 +146,7 @@ describe("transform tests", () => {
       if (!condition) throw new Error();
     }`,
     `function assert(condition) {
+      t_assert(condition, t_boolean);
       if (!condition) throw new Error();
       t_assert_truthy(condition);
     }`,
@@ -156,6 +157,7 @@ describe("transform tests", () => {
       (global as any)(condition);
     `,
     `export const assert = (condition) => {
+      t_assert(condition, t_boolean);
       const l_return_1 = global(condition);
       t_assert_truthy(condition);
       return l_return_1;
@@ -183,6 +185,7 @@ describe("transform tests", () => {
       return typeof value === "string";
     }`,
     `function isString(value) {
+      t_assert(value, t_ignore);
       console.log(1);
       const l_return_1 = typeof value === "string";
       if (l_return_1) t_assert(value, t_string);
@@ -195,6 +198,7 @@ describe("transform tests", () => {
       if (typeof value === 'number') throw new Error("not a string");
     }`,
     `function assertString(value) {
+      t_assert(value, t_ignore);
       if (typeof value === 'number') throw new Error("not a string");
       t_assert(value, t_string);
     }`,
@@ -205,6 +209,7 @@ describe("transform tests", () => {
       if (typeof value === 'number') throw new Error("not a string");
     }`,
     `export const assertString = function (value) {
+      t_assert(value, t_ignore);
       if (typeof value === 'number') throw new Error("not a string");
       t_assert(value, t_string);
     };`,
@@ -224,6 +229,7 @@ describe("transform tests", () => {
       console.log(fn());
     }`,
     `function assert(condition) {
+      t_assert(condition, t_boolean);
       if (Math.random() > 0.5) {
         while (false) { t_assert_truthy(condition); return; }
         if (!condition) throw new Error();
@@ -310,5 +316,53 @@ describe("transform tests", () => {
         `,
       },
     },
+  );
+
+  shouldTransform(
+    "parameter",
+    `function greet(name: string) { return name; }`,
+    `function greet(name) { t_assert(name, t_string); return name; }`,
+  );
+
+  shouldTransform(
+    "multi parameter",
+    `function add(a: number, b: number) { return a + b; }`,
+    `function add(a, b) { t_assert(a, t_number); t_assert(b, t_number); return a + b; }`,
+  );
+
+  shouldTransform(
+    "arrow function with parameters",
+    `const greet = (name: string) => name;`,
+    `const greet = (name) => { t_assert(name, t_string); return name; };`,
+  );
+
+  shouldTransform(
+    "method with parameters",
+    `class Greeter { greet(name: string) { return name; } }`,
+    `class Greeter { greet(name) { t_assert(name, t_string); return name; } }`,
+  );
+
+  shouldTransform(
+    "function expression with parameters",
+    `const fn = function(x: number) { return x; };`,
+    `const fn = function (x) { t_assert(x, t_number); return x; };`,
+  );
+
+  shouldTransform(
+    "optional parameter",
+    `function greet(name?: string) { return name || "hello"; }`,
+    `function greet(name) { t_assert(name, t_or(t_undefined, t_string)); return name || "hello"; }`,
+  );
+
+  shouldTransform(
+    "rest array parameter",
+    `function sum(...numbers: number[]) { return numbers.reduce((a, b) => a + b, 0); }`,
+    `function sum(...numbers) { t_assert(numbers, t_array(t_number)); return numbers.reduce((a, b) => { return a + b; }, 0); }`,
+  );
+
+  shouldTransform(
+    "mixed parameters with rest",
+    `function format(prefix: string, ...values: any[]) { return prefix + values.join(","); }`,
+    `function format(prefix, ...values) { t_assert(prefix, t_string); t_assert(values, t_array(t_ignore)); return prefix + values.join(","); }`,
   );
 });

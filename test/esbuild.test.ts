@@ -43,6 +43,11 @@ it("works", async () => {
 
     // test/fixtures/bundler-b.ts
     function someFunction(param) {
+      t_assert(param, t_object({
+        process: t_object({
+          version: t_string
+        }, [])
+      }, []));
       console.log(param.process.version);
     }
 
