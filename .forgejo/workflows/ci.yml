@@ -1,0 +1,24 @@
+name: pr-checks
+on:
+  pull_request:
+    branches: ["*"]
+
+jobs:
+  check:
+    runs-on: docker
+    steps:
+      - name: checkout branch
+        uses: actions/checkout@v4
+      - name: $ npm ci
+        run: npm ci
+      - name: $ dprint check
+        run: |
+          curl -fsSL https://dprint.dev/install.sh | sh -s 0.50.2
+          /root/.dprint/bin/dprint check
+      - name: $ npm test
+        run: npm test -- --coverage
+      - name: upload coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage
+          path: coverage

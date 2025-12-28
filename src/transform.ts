@@ -145,10 +145,10 @@ class Transformer {
       const properties = checker.getPropertiesOfType(type);
       if (properties.length > 0) {
         const shapeProps = properties.map((prop) => {
-          const declaration = prop.valueDeclaration ??
-            prop.declarations?.[0] ??
-            type.symbol?.valueDeclaration ??
-            type.symbol?.declarations?.[0];
+          const declaration = prop.valueDeclaration
+            ?? prop.declarations?.[0]
+            ?? type.symbol?.valueDeclaration
+            ?? type.symbol?.declarations?.[0];
           assert(declaration);
           const propType = checker.getTypeOfSymbolAtLocation(
             prop,

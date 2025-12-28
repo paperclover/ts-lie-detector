@@ -38,12 +38,12 @@ export default function rollupPlugin(
   };
 }
 
-import * as rollup from "rollup";
 import * as url from "node:url";
+import * as rollup from "rollup";
+import ts from "typescript";
 import { Service } from "./Service.ts";
 import {
   defaultOptions,
   type LieDetectorOptions,
   tsCompilerOptions,
 } from "./transform.ts";
-import ts from "typescript";

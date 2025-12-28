@@ -50,8 +50,8 @@ export default function esbuildPlugin(
 }
 
 import type * as esbuild from "esbuild";
-import { Service } from "./Service.ts";
-import { defaultOptions, type LieDetectorOptions } from "./transform.ts";
-import * as url from "url";
 import * as fs from "fs/promises";
 import * as path from "path";
+import * as url from "url";
+import { Service } from "./Service.ts";
+import { defaultOptions, type LieDetectorOptions } from "./transform.ts";

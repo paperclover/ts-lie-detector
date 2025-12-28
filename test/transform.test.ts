@@ -10,7 +10,7 @@ function shouldTransform(label: string, source: string, result: string) {
     expect(
       service.transformVirtual("virtual.ts", source)
         .text
-        .replace('"use strict";', "")
+        .replace("\"use strict\";", "")
         .trim()
         .replace(/\s+/g, " "),
     ).toBe(
@@ -58,7 +58,7 @@ describe("transform tests", () => {
   shouldTransform(
     "object type with optional",
     `unknown as { x: number, y?: string }`,
-    't_assert(unknown, t_object({ x: t_number, y: t_or(t_undefined, t_string) }, ["y"]));',
+    "t_assert(unknown, t_object({ x: t_number, y: t_or(t_undefined, t_string) }, [\"y\"]));",
   );
   shouldTransform(
     "interface",

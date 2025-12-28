@@ -1,7 +1,7 @@
-import { expect, it } from "vitest";
-import { rollup } from "rollup";
-import { join } from "node:path";
 import rollupPlugin from "@clo/ts-lie-detector/rollup.ts";
+import { join } from "node:path";
+import { rollup } from "rollup";
+import { expect, it } from "vitest";
 
 it("works", async () => {
   const bundle = await rollup({

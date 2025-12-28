@@ -111,7 +111,7 @@ export class Service {
     const emit = builder.emit(
       sourceFile,
       // writeFile
-      function (file, contents) {
+      function(file, contents) {
         outputs.set(file, contents);
       },
       // cancelationToken
@@ -158,10 +158,10 @@ export class Service {
 }
 
 import assert from "assert";
+import { EventEmitter } from "node:events";
 import * as ts from "typescript";
 import {
   createTransformer,
   type LieDetectorOptions,
   tsCompilerOptions,
 } from "./transform.ts";
-import { EventEmitter } from "node:events";

@@ -1,7 +1,7 @@
-import { expect, it } from "vitest";
+import esbuildPlugin from "@clo/ts-lie-detector/esbuild.ts";
 import { build } from "esbuild";
 import { join } from "node:path";
-import esbuildPlugin from "@clo/ts-lie-detector/esbuild.ts";
+import { expect, it } from "vitest";
 
 it("works", async () => {
   const result = await build({
